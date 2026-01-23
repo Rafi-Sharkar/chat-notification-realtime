@@ -1,0 +1,9 @@
+model GeneralSetting {
+  id                         String  @id @default(cuid())
+  platformName               String?
+  supportEmail               String?
+  PlatformDescription        String?
+  isAutoApproveGarages       Boolean @default(false)
+  isAutoApproveParts         Boolean @default(false)
+  isEmailNotificationEnabled Boolean @default(true)
+}

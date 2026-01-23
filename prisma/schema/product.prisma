@@ -1,0 +1,80 @@
+// ====================== ENUMS ======================
+enum SellerType {
+  INDIVIDUAL
+  VERIFIED_SUPPLIER
+}
+
+enum ProductStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ListingPlan {
+  PAY_PER_LISTING
+  MONTHLY_100
+}
+
+// ====================== MAIN MODELS ======================
+
+model Seller {
+  id          String  @id @default(uuid())
+  name        String?
+  email       String  @unique
+  phoneNumber String?
+
+  sellerType        SellerType @default(INDIVIDUAL)
+  isVerified        Boolean    @default(false)
+  verificationImage String?
+
+  subscriptionPlan      ListingPlan @default(PAY_PER_LISTING)
+  subscriptionExpiresAt DateTime?
+  freeProductsUsed      Int         @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  products Product[]
+
+  @@map("sellers")
+}
+
+model Product {
+  id       String @id @default(uuid())
+  sellerId String
+  seller   Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  // User who created the product
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  partName    String
+  brand       String?
+  // category    String
+  categoryId  String
+  category    PartsCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  condition   String
+  price       Decimal       @db.Decimal(10, 2)
+  quantity    Int           @default(1)
+  description String?
+
+  photos String[] @default([])
+
+  status     ProductStatus @default(PENDING)
+  isPromoted Boolean       @default(false)
+  promoCost  Decimal?      @db.Decimal(10, 2)
+
+  views     Int @default(0)
+  inquiries Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  promotions Promotion[]
+  payments   Payment[]
+
+  @@map("products")
+}

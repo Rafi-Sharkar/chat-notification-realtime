@@ -1,0 +1,121 @@
+model User {
+  id       String  @id @default(uuid())
+  email    String  @unique
+  fullName String?
+  password String?
+  bio      String?
+  phone    String? @unique
+  address  String?
+  // ----------User Live Location ----------
+  userLat  String?
+  userLng  String?
+
+  // ---------- file---------------------
+  tradeLicense String?
+  garageLogo   String?
+  profilePhoto String?
+  // -------- garage information-------
+
+  city         String?
+  emirate      String?
+  garageName   String?
+  garageStatus GarageStatus @default(PENDING)
+
+  // ------------------ Google Authentication ------------------
+  googleId     String?   @unique
+  emailOtp     Int?
+  otpExpiry    DateTime?
+  isVerified   Boolean   @default(false)
+  ReviewAlerts Boolean   @default(false)
+
+  // ------------------ Password Reset OTP ---------------------
+  resetOtp       Int?
+  resetOtpExpiry DateTime?
+
+  // ------------------ Account Status -------------------------
+  isActive                Boolean   @default(true)
+  isDeleted               Boolean   @default(false)
+  deletedAt               DateTime?
+  isMembership            Boolean   @default(false)
+  isEmailNotification     Boolean   @default(false)
+  isCustomerInquiryAlerts Boolean   @default(false)
+  isSmsNotification       Boolean   @default(false)
+  isEmailPromotional      Boolean   @default(false)
+  isGarageVerified        Boolean   @default(false)
+  // Trial tracking
+  trialStartDate          DateTime?
+  trialEndDate            DateTime?
+  isTrialActive           Boolean   @default(false)
+  productApprovalAlerts   Boolean   @default(false)
+  freeProductsListing     Int       @default(0)
+  freeProductsUsed        Int       @default(0)
+  promotionCredits        Int       @default(0)
+  garageTrailMember       Boolean   @default(true)
+  garagePaidMember        Boolean   @default(false)
+  // Payment tracking
+  hasPaid                 Boolean   @default(false)
+  nextBillingDate         DateTime?
+  // ------------------ Role & Category ------------------------
+  role                    UserRole
+  serviceCategories       String[]
+
+  // ------------------ Membership -----------------------------
+  Payment            Payment[]
+  subscriptionEndsAt DateTime?
+
+  // for garage subscription
+  subscriptionTrialStartDate  DateTime?
+  subscriptionTrialEndDate    DateTime?
+  isSubscriptionTrialActive   Boolean   @default(false)
+  subscriptionStartDate       DateTime?
+  subscriptionEndDate         DateTime?
+  nextSubscriptionBillingDate DateTime?
+  isSubscribed                Boolean   @default(false)
+
+  // Product Monthly Subscription fields
+  productMonthlyActive    Boolean   @default(false)
+  productMonthlyStartDate DateTime?
+  productMonthlyEndDate   DateTime?
+
+  // ------------------ Relations ------------------------------
+  UserNotification     UserNotification[]
+  notificationToggle   NotificationToggle?
+  garages              Garage[]
+  promotions           Promotion[]
+  garagePromotionQuota GaragePromotionQuota?
+  reviews              Review[]
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  // ------message relation---
+  privateConversation1 PrivateConversation[]  @relation("User1Conversations")
+  privateConversation2 PrivateConversation[]  @relation("User2Conversations")
+  privateMessage       PrivateMessage[]
+  privateMessageStatus PrivateMessageStatus[]
+
+  // ------product relation---
+  createdProducts Product[]
+
+  // garage subscriptions
+  garageSubscriptions      GarageSubscription[]
+  garageAdminNotifications garageAdminNotification[]
+  clientReviews         ClientReview []
+ 
+  
+  @@map("users")
+}
+
+enum UserRole {
+  CAR_OWNER
+  GARAGE_OWNER
+  SUPER_ADMIN
+  MEMBER
+}
+
+enum GarageStatus {
+  APPROVE
+  PENDING
+  DECLINE
+  GARAGE_PAID_OWNER
+  GARAGE_TRAIL_OWNER
+}

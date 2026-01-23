@@ -1,0 +1,14 @@
+model NotificationToggle {
+  id                   String  @id @default(uuid())
+  email                Boolean @default(true)
+  userUpdates          Boolean @default(true)
+  message              Boolean @default(true)
+  userRegistration     Boolean @default(true)
+  CustomerInquiryAlert Boolean @default(true)
+  NewMessage           Boolean @default(true)
+  ProductApproveUpdate Boolean @default(true)
+  Message              Boolean @default(true)
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

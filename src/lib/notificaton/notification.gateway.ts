@@ -1,0 +1,257 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
+import {
+  OnGatewayConnection,
+  OnGatewayDisconnect,
+  OnGatewayInit,
+  WebSocketGateway,
+  WebSocketServer,
+} from '@nestjs/websockets';
+
+import { Server, Socket } from 'socket.io';
+import { ENVEnum } from 'src/common/enum/env.enum';
+import { PayloadForSocketClient } from 'src/common/interface/socket-client-payload';
+import { JWTPayload } from 'src/common/jwt/jwt.interface';
+import { PrismaService } from '../prisma/prisma.service';
+
+@WebSocketGateway({
+  cors: { origin: '*' },
+  namespace: '/notification',
+})
+@Injectable()
+export class NotificationGateway
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+{
+  private readonly logger = new Logger(NotificationGateway.name);
+  private readonly clients = new Map<string, Set<Socket>>();
+
+  constructor(
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
+    private readonly prisma: PrismaService,
+  ) {}
+
+  @WebSocketServer()
+  server: Server;
+
+  afterInit(server: Server) {
+    this.logger.log('Socket.IO server initialized', server.adapter.name);
+  }
+
+  // Handles the connection of a client to the server.
+  async handleConnection(client: Socket) {
+    try {
+      const token = this.extractTokenFromSocket(client);
+      if (!token) {
+        this.logger.warn('Missing token');
+        return client.disconnect(true);
+      }
+
+      const payload = this.jwtService.verify<JWTPayload>(token, {
+        secret: this.configService.getOrThrow(ENVEnum.JWT_SECRET),
+      });
+
+      if (!payload.sub) {
+        this.logger.warn('Invalid token payload: missing sub');
+        return client.disconnect(true);
+      }
+
+      const user = await this.prisma.user.findUnique({
+        where: { id: payload.sub },
+        select: {
+          id: true,
+          email: true,
+          notificationToggle: true,
+        },
+      });
+
+      if (!user) {
+        this.logger.warn(`User not found for ID: ${payload.sub}`);
+        return client.disconnect(true);
+      }
+
+      const payloadForSocketClient: PayloadForSocketClient = {
+        sub: user.id,
+        email: user.email || '',
+        emailToggle: Boolean(user.notificationToggle?.email) || false,
+        CustomerInquiryAlert:
+          Boolean(user.notificationToggle?.CustomerInquiryAlert) || false,
+        NewMessage: Boolean(user.notificationToggle?.NewMessage) || false,
+        ProductApproveUpdate:
+          Boolean(user.notificationToggle?.ProductApproveUpdate) || false,
+        userRegistration:
+          Boolean(user.notificationToggle?.userRegistration) || false,
+        Message: Boolean(user.notificationToggle?.Message) || false,
+      };
+
+      client.data = { user: payloadForSocketClient };
+      this.subscribeClient(user.id, client);
+
+      this.logger.log(`Client connected: ${user.id}`);
+    } catch (err: any) {
+      this.logger.warn(`JWT verification failed: ${err.message || err}`);
+      client.disconnect(true);
+    }
+  }
+
+  /**
+   * Handles the disconnection of a client from the server.
+   *
+   * If a user ID is associated with the client, it unsubscribes the client from
+   * the user's notification room and logs the disconnection with the user ID.
+   * If no user ID is associated, logs the disconnection for an unknown user.
+
+   */
+
+  handleDisconnect(client: Socket) {
+    const userId = client.data?.user?.sub;
+    if (userId) {
+      this.unsubscribeClient(userId, client);
+      this.logger.log(`Client disconnected: ${userId}`);
+    } else {
+      this.logger.log('Client disconnected: unknown user');
+    }
+  }
+
+  // Extracts the JWT token from the socket client's handshake.
+  private extractTokenFromSocket(client: Socket): string | null {
+    const authHeader =
+      client.handshake.headers.authorization || client.handshake.auth?.token;
+
+    // Header token
+    if (authHeader) {
+      return authHeader.startsWith('Bearer ')
+        ? authHeader.substring(7)
+        : authHeader;
+    }
+
+    // Cookie tokens
+    const cookieHeader = client.handshake.headers.cookie;
+    if (cookieHeader) {
+      const cookies = Object.fromEntries(
+        cookieHeader.split(';').map((c) => {
+          const [k, v] = c.trim().split('=');
+          return [k, decodeURIComponent(v)];
+        }),
+      );
+
+      const token = cookies['authToken'] || cookies['token'];
+      if (token) {
+        return token.startsWith('Bearer ') ? token.substring(7) : token;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Subscribes a client to a user's notification room.
+   *
+   * If the user ID is not present in the clients map, a new Set is created
+   * and associated with the user ID. The client is then added to the Set.
+   * A log message is recorded with the user ID.
+   *
+   * @param userId - The ID of the user to subscribe the client to.
+   * @param client - The client socket to subscribe.
+   */
+  private subscribeClient(userId: string, client: Socket) {
+    if (!this.clients.has(userId)) {
+      this.clients.set(userId, new Set());
+    }
+    this.clients.get(userId)!.add(client);
+    this.logger.debug(`Subscribed client to user ${userId}`);
+  }
+
+  /**
+   * Unsubscribes a client from a user's notification room.
+   *
+   * If the user ID is not present in the clients map, the function does
+   * nothing.
+   * If the user ID is present in the clients map, the client is removed
+   * from the Set associated with the user ID. If the Set is then empty, it
+   * is removed from the map.
+   * A log message is recorded with the user ID.
+   *
+   * @param userId - The ID of the user to unsubscribe the client from.
+   * @param client - The client socket to unsubscribe.
+   */
+  private unsubscribeClient(userId: string, client: Socket) {
+    const set = this.clients.get(userId);
+    if (!set) return;
+
+    set.delete(client);
+    this.logger.debug(`Unsubscribed client from user ${userId}`);
+    if (set.size === 0) {
+      this.clients.delete(userId);
+      this.logger.debug(`Removed empty client set for user ${userId}`);
+    }
+  }
+
+  /**
+   * Retrieves the set of clients subscribed to the given user's notification room.
+   *
+   * If the user ID is not present in the clients map, an empty Set is returned.
+   *
+   * @param userId - The ID of the user to retrieve clients for.
+   * @returns A Set of client sockets subscribed to the user's notification room.
+   */
+  public getClientsForUser(userId: string): Set<Socket> {
+    return this.clients.get(userId) || new Set();
+  }
+
+  /**
+   * Calculates the delay in milliseconds between the current time and the given
+   * publish date.
+   * If the publish date is in the past, the delay is set to 0.
+   * @param publishAt - The date to calculate the delay for.
+   * @returns The calculated delay in milliseconds.
+   */
+  public getDelay(publishAt: Date): number {
+    const delay = publishAt.getTime() - Date.now();
+    return delay > 0 ? delay : 0;
+  }
+
+  public async notifySingleUser(
+    userId: string,
+    event: string,
+    data: any,
+  ): Promise<void> {
+    const clients = this.getClientsForUser(userId);
+    if (clients.size === 0) {
+      this.logger.warn(`No clients connected for user ${userId}`);
+      return;
+    }
+
+    clients.forEach((client) => {
+      client.emit(event, data);
+      this.logger.log(`Notification sent to user ${userId} via event ${event}`);
+    });
+  }
+
+  public async notifyMultipleUsers(
+    userIds: string[],
+    event: string,
+    data: any,
+  ): Promise<void> {
+    if (userIds.length === 0) {
+      this.logger.warn('No user IDs provided for notification');
+      return;
+    }
+
+    userIds.forEach((userId) => {
+      this.notifySingleUser(userId, event, data);
+    });
+  }
+
+  public async notifyAllUsers(event: string, data: any): Promise<void> {
+    this.clients.forEach((clients, userId) => {
+      clients.forEach((client) => {
+        client.emit(event, data);
+        this.logger.log(
+          `Notification sent to all users via event ${event} for user ${userId}`,
+        );
+      });
+    });
+  }
+}

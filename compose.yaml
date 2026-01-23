@@ -1,0 +1,99 @@
+services:
+  caddy:
+    image: caddy
+    container_name: yousef_server_caddy
+    restart: always
+    profiles:
+      - prod
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "caddy validate --config /etc/caddy/Caddyfile"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - yousef-network
+
+  app:
+    image: ${DOCKER_USERNAME}/${PACKAGE_NAME}:latest # ← Changed: use PACKAGE_NAME variable
+    container_name: yousef_server
+    profiles:
+      - prod
+    platform: linux/amd64
+    pull_policy: always # ← Added: force pull from Docker Hub
+    # build:  # ← REMOVED: This was causing the problem!
+    #   context: .
+    #   dockerfile: Dockerfile
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/yousef_db
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - yousef-file_data:/app/uploads
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - yousef-network
+
+  db:
+    image: postgres:16-alpine
+    profiles:
+      - dev
+      - prod
+    container_name: yousef-postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=yousef_db
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    ports:
+      - "5442:5432"
+    volumes:
+      - yousef_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U postgres -d yousef_db",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - yousef-network
+
+volumes:
+  yousef-file_data:
+    driver: local
+  yousef_data:
+    driver: local
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local
+
+networks:
+  yousef-network:
+    driver: bridge

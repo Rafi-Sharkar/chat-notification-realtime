@@ -1,0 +1,34 @@
+model Contact {
+  id            String         @id @default(uuid())
+  FirstName     String
+  LastName      String
+  email         String
+  subject       ContactSubject
+  message       String
+  othersubject  String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  garageOwnerId String?
+  userId        String?
+  makeasClosed   Boolean        @default(false)
+  messages      Message[]
+}
+
+model Message {
+  id        String  @id @default(uuid())
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  // true → admin, false → user
+  isFromAdmin     Boolean @default(false)
+  isForGrageAdmin Boolean @default(false)
+
+  content   String
+  createdAt DateTime @default(now())
+}
+
+enum ContactSubject {
+  CAR_PARTS
+  CAR_SERVICE
+  OTHERS
+}
