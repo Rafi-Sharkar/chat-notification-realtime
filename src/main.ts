@@ -100,6 +100,6 @@ async function bootstrap() {
   const port = parseInt(configService.get<string>(ENVEnum.PORT) ?? '3000', 10);
   await app.listen(port);
   console.log(` Server running on http://localhost:${port}`);
-  console.log(`Swagger docs available at http://localhost:${port}/docs`);
+  console.log(`Swagger docs available at http://localhost:${port}/api`);
 }
 bootstrap();
